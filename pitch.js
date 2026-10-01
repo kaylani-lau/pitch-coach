@@ -468,9 +468,13 @@
       else tracker.replay();
     };
     replayBtn.addEventListener('click', toggleReplay);
-    // The browser drops the screen lock when the app is hidden; take it back on return.
+    // Stop listening as soon as the app is hidden (app switch, home screen, screen lock),
+    // so nothing runs in the background. The last 10 seconds stay available to replay.
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && tracker.state !== 'idle' && tracker.state !== 'stopped') keepScreenOn(true);
+      if (document.visibilityState === 'hidden' && (tracker.state === 'live' || tracker.state === 'replay')) {
+        tracker.stop();
+        keepScreenOn(false);
+      }
     });
     document.addEventListener('keydown', (e) => {
       if (e.code === 'Space' && e.target === document.body) {
