@@ -24,9 +24,6 @@
     --line: #e0263a;
     --dot: #e0263a;
     --playhead: #15181c;
-    --target: #1f9d61;
-    --in: #1f9d61;
-    --off: #c77a12;
     --accent: #15181c;
     --accent-text: #ffffff;
     --seg-bg: #e9ecf0;
@@ -48,9 +45,6 @@
       --line: #ff5a6b;
       --dot: #ff5a6b;
       --playhead: #ffffff;
-      --target: #3ccf88;
-      --in: #3ccf88;
-      --off: #f0a640;
       --accent: #eef0f3;
       --accent-text: #111316;
       --seg-bg: #23272c;
@@ -67,41 +61,21 @@
   .wrap { max-width: 900px; margin: 0 auto; padding-block: 16px 24px; display: flex; flex-direction: column; gap: 14px; }
   .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
   h1 { margin: 0; font-size: 18px; }
-  .seg { display: inline-flex; background: var(--seg-bg); border-radius: 10px; padding: 3px; gap: 2px; }
-  .seg label { position: relative; }
-  .seg input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
-  .seg span { display: block; padding: 7px 12px; border-radius: 8px; font-weight: 600; font-size: 14px; color: var(--muted); }
-  .seg input:checked + span { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px #0000001f; }
-  .seg input:focus-visible + span { outline: 2px solid var(--target); }
-  .status {
-    display: flex;
-    align-items: baseline;
-    gap: 14px;
-    flex-wrap: wrap;
-    padding: 14px 16px;
-    border-radius: 14px;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-left: 6px solid var(--border);
-  }
-  .status[data-state="in"] { border-left-color: var(--in); }
-  .status[data-state="off"] { border-left-color: var(--off); }
-  .status b { font-size: 34px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
-  .status .word { font-size: 22px; font-weight: 600; }
-  .status[data-state="in"] .word { color: var(--in); }
-  .status[data-state="off"] .word { color: var(--off); }
   .msg { margin: 0; padding: 8px 12px; border-radius: 8px; background: #e0263a26; }
   .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
   #graph { width: 100%; height: min(46vh, 420px); display: block; }
-  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .stats { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 12px; }
   .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; min-width: 0; }
   .stat .k { font-size: 12px; color: var(--muted); font-weight: 600; }
   .stat .v { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
   .mix { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--seg-bg); margin-top: 10px; }
   .mix div { height: 100%; transition: width 0.3s; }
   .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .legend b { display: inline-block; min-width: 4ch; font-variant-numeric: tabular-nums; }
   .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; }
   .bottom { display: flex; gap: 12px; align-items: stretch; flex-wrap: wrap; }
+  .controls { display: flex; gap: 12px; }
+  .controls .btn { flex: 1 1 0; padding-block: 16px; font-size: 17px; }
   .phrase {
     flex: 1 1 260px;
     text-align: left;
@@ -131,8 +105,7 @@
   #start { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
   .btn:disabled { opacity: 0.45; cursor: not-allowed; }
   @media (max-width: 520px) {
-    .stats { grid-template-columns: 1fr 1fr; }
-    .stats .stat:last-child { grid-column: 1 / -1; }
+    .stats { grid-template-columns: minmax(0, 1fr); }
     .btn { flex: 1 1 0; }
   }
 </style>
@@ -141,17 +114,14 @@
 <div class="wrap">
   <div class="top">
     <h1>Pitch coach</h1>
-    <div class="seg" role="radiogroup" aria-label="Target range" id="targets"></div>
+  </div>
+  <div class="controls">
+    <button class="btn" id="start" type="button">Start</button>
+    <button class="btn" id="replay" type="button" disabled>Replay 10 s</button>
   </div>
   <p class="msg" id="msg" hidden></p>
-  <div class="status" id="status" data-state="">
-    <b id="hz">—</b>
-    <span class="word" id="word">Press Start</span>
-    <span class="sub" id="where"></span>
-  </div>
   <div class="card"><canvas id="graph" aria-label="Pitch over the last 10 seconds"></canvas></div>
   <div class="stats">
-    <div class="stat"><div class="k">In target, last 10 s</div><div class="v" id="inTarget">—</div></div>
     <div class="stat"><div class="k">Median pitch</div><div class="v" id="median">—</div></div>
     <div class="stat">
       <div class="k">Time in each range</div>
@@ -161,8 +131,6 @@
   </div>
   <div class="bottom">
     <button class="phrase" id="phrase" type="button"><span id="phraseText"></span><small>Tap for another phrase</small></button>
-    <button class="btn" id="start" type="button">Start</button>
-    <button class="btn" id="replay" type="button" disabled>Replay 10 s</button>
   </div>
 </div>
 
@@ -182,26 +150,6 @@
     $('msg').textContent = message;
     $('msg').hidden = false;
   });
-
-  // Target picker, remembered per browser.
-  let target = 'female';
-  try {
-    const saved = localStorage.getItem('pitch-coach-target');
-    if (BANDS.some((b) => b.id === saved)) target = saved;
-  } catch (e) { /* storage unavailable */ }
-  for (const band of BANDS) {
-    const label = document.createElement('label');
-    label.innerHTML = '<input type="radio" name="target"><span></span>';
-    label.querySelector('span').textContent = band.label;
-    const input = label.querySelector('input');
-    input.value = band.id;
-    input.checked = band.id === target;
-    input.addEventListener('change', () => {
-      target = band.id;
-      try { localStorage.setItem('pitch-coach-target', target); } catch (e) { /* ignore */ }
-    });
-    $('targets').appendChild(label);
-  }
 
   let phraseIndex = 0;
   $('phraseText').textContent = VoicePitch.PHRASES[0];
@@ -230,34 +178,26 @@
     $('legend').appendChild(item);
   }
 
-  const IDLE = { idle: 'Press Start', live: 'Listening…', replay: 'Replaying…', stopped: 'Stopped' };
-
-  VoicePitch.loop(() => {
-    const state = tracker.state;
-    VoicePitch.drawGraph($('graph'), tracker, { target });
-
-    const goal = BANDS.find((b) => b.id === target);
-    const hz = tracker.current();
-    $('hz').textContent = hz ? Math.round(hz) + ' Hz' : '—';
-    if (hz) {
-      const inTarget = hz >= goal.lo && hz < goal.hi;
-      $('status').dataset.state = inTarget ? 'in' : 'off';
-      $('word').textContent = inTarget ? 'In target' : hz < goal.lo ? 'Below target' : 'Above target';
-      $('where').textContent = VoicePitch.labelFor(hz) + ' range';
-    } else {
-      $('status').dataset.state = '';
-      $('word').textContent = IDLE[state];
-      $('where').textContent = 'Target ' + goal.lo + '–' + goal.hi + ' Hz';
-    }
-
+  let lastStatsAt = 0;
+  function updateStats() {
     const stats = tracker.stats();
-    const has = stats.voicedCount > 0;
-    $('inTarget').textContent = has ? Math.round(stats.share[target] * 100) + '%' : '—';
     $('median').textContent = stats.median ? Math.round(stats.median) + ' Hz' : '—';
     for (const m of MIX) {
       const pct = Math.round(stats.share[m.id] * 100);
       $('mix').querySelector('[data-id="' + m.id + '"]').style.width = pct + '%';
       $('legend').querySelector('b[data-id="' + m.id + '"]').textContent = pct + '%';
+    }
+  }
+
+  VoicePitch.loop(() => {
+    const state = tracker.state;
+    VoicePitch.drawGraph($('graph'), tracker);
+
+    // Numbers update 4 times a second instead of every frame, so they read steadily.
+    const now = performance.now();
+    if (now - lastStatsAt >= 250) {
+      lastStatsAt = now;
+      updateStats();
     }
 
     const running = state === 'live' || state === 'replay';
