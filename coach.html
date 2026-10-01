@@ -3,52 +3,37 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#111316">
+<meta name="theme-color" content="#000000">
 <title>Pitch Coach</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <style>
+  /* Low-power look: always dark, true black, dim colors. On an OLED screen (like the
+     Galaxy S25), black pixels are off, so the less light the screen gives off, the less
+     power it uses. Only the pitch line, the thing you watch, stays bright. */
   :root {
-    --bg: #f5f6f8;
-    --surface: #ffffff;
-    --text: #15181c;
-    --muted: #626a73;
-    --border: #e2e5ea;
-    --band-female: #ffb9c5;
-    --band-andro: #d3d8dd;
-    --band-male: #a9d6e5;
-    --band-text: #15181c;
-    --grid: #0000001a;
-    --grid-text: #626a73;
-    --line: #e0263a;
-    --dot: #e0263a;
-    --playhead: #15181c;
-    --accent: #15181c;
-    --accent-text: #ffffff;
-    --seg-bg: #e9ecf0;
-    color-scheme: light dark;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #111316;
-      --surface: #1a1d21;
-      --text: #eef0f3;
-      --muted: #9aa2ab;
-      --border: #2a2e33;
-      --band-female: #5b2a37;
-      --band-andro: #2e3338;
-      --band-male: #1d4453;
-      --band-text: #eef0f3;
-      --grid: #ffffff14;
-      --grid-text: #9aa2ab;
-      --line: #ff5a6b;
-      --dot: #ff5a6b;
-      --playhead: #ffffff;
-      --accent: #eef0f3;
-      --accent-text: #111316;
-      --seg-bg: #23272c;
-    }
+    --bg: #000000;
+    --surface: #000000;
+    --text: #c9ced4;
+    --muted: #6e767f;
+    --border: #1f2226;
+    --band-female: #2a0f16;
+    --band-andro: #141619;
+    --band-male: #0a1f27;
+    --band-text: #8a929b;
+    --mix-female: #5b2a37;
+    --mix-andro: #2e3338;
+    --mix-male: #1d4453;
+    --grid: #ffffff0d;
+    --grid-text: #6e767f;
+    --line: #ff5a6b;
+    --dot: #ff5a6b;
+    --playhead: #c9ced4;
+    --accent: #c9ced4;
+    --accent-text: #000000;
+    --seg-bg: #0d0e10;
+    color-scheme: dark;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; }
@@ -124,7 +109,7 @@
 <div class="wrap">
   <div class="top">
     <h1>Pitch coach</h1>
-    <small class="version">v5 · Oct 1</small>
+    <small class="version">v6 · Oct 1</small>
   </div>
   <div class="controls">
     <button class="btn" id="start" type="button"><span class="row"><span class="dot"></span><span id="startLabel">Start</span></span><small id="startHint">Tap to listen</small></button>
@@ -170,7 +155,7 @@
   });
 
   // Range mix bar and legend.
-  const MIX = BANDS.map((b) => ({ id: b.id, label: b.label, color: 'var(--band-' + b.id + ')' }))
+  const MIX = BANDS.map((b) => ({ id: b.id, label: b.label, color: 'var(--mix-' + b.id + ')' }))
     .concat([{ id: 'none', label: 'Outside', color: 'var(--grid-text)' }]);
   for (const m of MIX) {
     const seg = document.createElement('div');
@@ -228,7 +213,7 @@
     const info = tracker.replayInfo();
     $('replay').disabled = state === 'idle' || tracker.recordedSeconds() < 0.2;
     $('replay').textContent = info ? 'Stop (' + Math.ceil(info.remaining) + ' s)' : 'Replay 10 s';
-  });
+  }, 24); // draw 24 times a second, about as often as new pitch readings arrive
 </script>
 </body>
 </html>

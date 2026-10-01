@@ -347,9 +347,20 @@
     return api;
   }
 
+  // Page colors are looked up once per canvas and then reused, instead of asking the
+  // browser for its styles several times every frame. The page's colors never change.
+  const colorCache = new WeakMap();
   function cssVar(el, name, fallback) {
-    const value = getComputedStyle(el).getPropertyValue(name).trim();
-    return value || fallback;
+    let colors = colorCache.get(el);
+    if (!colors) {
+      colors = new Map();
+      colorCache.set(el, colors);
+    }
+    if (!colors.has(name)) {
+      const value = getComputedStyle(el).getPropertyValue(name).trim();
+      colors.set(name, value || fallback);
+    }
+    return colors.get(name);
   }
 
   // Draws the scrolling pitch graph with range bands.
@@ -569,13 +580,18 @@
     else resumeOnReturn = true;
   }
 
-  // Calls render every animation frame.
-  function loop(render) {
-    const frame = () => {
-      render();
-      global.requestAnimationFrame(frame);
-    };
-    global.requestAnimationFrame(frame);
+  // Calls render about fps times a second. Pitch readings arrive about 23 times a second,
+  // so drawing at the screen's full rate (up to 120 Hz) would mostly repeat the same picture.
+  function loop(render, fps) {
+    let pending = false;
+    global.setInterval(() => {
+      if (pending) return; // the last frame hasn't been drawn yet (for example, the page is hidden)
+      pending = true;
+      global.requestAnimationFrame(() => {
+        pending = false;
+        render();
+      });
+    }, 1000 / fps);
   }
 
   const VoicePitch = { BANDS, WINDOW_SEC, PHRASES, bandFor, labelFor, detectPitch, median, createTracker, drawGraph, formatTime, bindControls, loop };
