@@ -103,7 +103,16 @@
     background: var(--surface);
     color: var(--text);
   }
-  #start { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  /* The Start button doubles as the listening timer. */
+  #start { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding-block: 10px; line-height: 1.15; font-variant-numeric: tabular-nums; }
+  #start .row { display: flex; align-items: center; gap: 8px; }
+  #start small { font-size: 12px; font-weight: 500; color: var(--muted); max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #start .dot { width: 10px; height: 10px; border-radius: 50%; flex: none; border: 2px solid var(--muted); }
+  #start.live .dot { background: var(--line); border-color: var(--line); animation: beat 1s infinite; }
+  #start.replay .dot { width: 0; height: 0; border-radius: 0; border-width: 6px 0 6px 10px; border-color: transparent transparent transparent var(--muted); }
+  @keyframes beat { 0%, 100% { opacity: 1; transform: scale(1); } 60% { opacity: 0.35; transform: scale(0.8); } }
+  @media (prefers-reduced-motion: reduce) { #start.live .dot { animation: none; } }
+  #replay { padding-block: 10px; }
   .btn:disabled { opacity: 0.45; cursor: not-allowed; }
   @media (max-width: 520px) {
     .stats { grid-template-columns: minmax(0, 1fr); }
@@ -115,10 +124,10 @@
 <div class="wrap">
   <div class="top">
     <h1>Pitch coach</h1>
-    <small class="version">v4 · Oct 1</small>
+    <small class="version">v5 · Oct 1</small>
   </div>
   <div class="controls">
-    <button class="btn" id="start" type="button">Start</button>
+    <button class="btn" id="start" type="button"><span class="row"><span class="dot"></span><span id="startLabel">Start</span></span><small id="startHint">Tap to listen</small></button>
     <button class="btn" id="replay" type="button" disabled>Replay 10 s</button>
   </div>
   <p class="msg" id="msg" hidden></p>
@@ -191,9 +200,19 @@
     }
   }
 
+  // What the Start button says in each state: [label, hint].
+  function startText(state) {
+    const time = VoicePitch.formatTime(tracker.listenedSeconds());
+    if (state === 'live') return ['Listening ' + time, 'Tap to pause'];
+    if (state === 'replay') return ['Replaying', 'Not listening'];
+    if (state === 'stopped') return ['Paused ' + time, 'Tap to listen'];
+    if (state === 'waiting') return ['Tap to start', 'Then it listens'];
+    return ['Start', 'Tap to listen'];
+  }
+
   VoicePitch.loop(() => {
     const state = tracker.state;
-    VoicePitch.drawGraph($('graph'), tracker);
+    VoicePitch.drawGraph($('graph'), tracker, { ruler: 22 });
 
     // Numbers update 4 times a second instead of every frame, so they read steadily.
     const now = performance.now();
@@ -202,8 +221,10 @@
       updateStats();
     }
 
-    const running = state === 'live' || state === 'replay';
-    $('start').textContent = state === 'waiting' ? 'Tap to start' : running ? 'Stop' : 'Start';
+    const [label, hint] = startText(state);
+    if ($('start').className !== 'btn ' + state) $('start').className = 'btn ' + state;
+    if ($('startLabel').textContent !== label) $('startLabel').textContent = label;
+    if ($('startHint').textContent !== hint) $('startHint').textContent = hint;
     const info = tracker.replayInfo();
     $('replay').disabled = state === 'idle' || tracker.recordedSeconds() < 0.2;
     $('replay').textContent = info ? 'Stop (' + Math.ceil(info.remaining) + ' s)' : 'Replay 10 s';

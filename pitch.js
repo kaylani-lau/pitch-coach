@@ -126,6 +126,7 @@
     let replayDur = 0;
     let frozenNow = 0;
     let starting = null;
+    let listenStart = 0; // when the current stretch of listening began, in AudioContext seconds
     const history = []; // { t, hz } in AudioContext seconds
     const recent = []; // last few raw readings, for median smoothing
 
@@ -138,6 +139,8 @@
       filled = 0;
       history.length = 0;
       recent.length = 0;
+      // The mic was ignored during the replay, so listening counts again from zero.
+      if (capturing) listenStart = ctx.currentTime;
     }
 
     function smooth(hz) {
@@ -191,6 +194,7 @@
       // Not awaited: until the page has been tapped, the browser can leave this pending,
       // and the tracker reports 'waiting' meanwhile.
       ctx.resume();
+      listenStart = ctx.currentTime;
       sampleRate = ctx.sampleRate;
       ring = new Float32Array(Math.round(sampleRate * WINDOW_SEC));
       ringPos = 0;
@@ -224,6 +228,16 @@
         if (!ctx) return 0;
         if (replayNode || !capturing) return frozenNow;
         return ctx.currentTime;
+      },
+
+      // When the current stretch of listening began, and how long it has run.
+      startedAt() {
+        return listenStart;
+      },
+
+      listenedSeconds() {
+        if (!ctx) return 0;
+        return Math.max(0, api.now() - listenStart);
       },
 
       // Seconds of audio available to replay.
@@ -339,12 +353,13 @@
   }
 
   // Draws the scrolling pitch graph with range bands.
-  // opts: { fmin, fmax, grid, labels, target (band id to highlight), dots }
+  // opts: { fmin, fmax, grid, labels, target (band id to highlight), dots,
+  //         ruler (height in px of a time ruler along the bottom, 0 for none) }
   function drawGraph(canvas, tracker, opts) {
-    const o = Object.assign({ fmin: 50, fmax: 450, grid: true, labels: true, target: null, dots: true }, opts);
+    const o = Object.assign({ fmin: 50, fmax: 450, grid: true, labels: true, target: null, dots: true, ruler: 0 }, opts);
     const dpr = global.devicePixelRatio || 1;
     const w = canvas.clientWidth;
-    const h = canvas.clientHeight;
+    let h = canvas.clientHeight;
     if (!w || !h) return;
     if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
       canvas.width = Math.round(w * dpr);
@@ -353,6 +368,8 @@
     const g = canvas.getContext('2d');
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, w, h);
+    const fullH = h;
+    h = fullH - o.ruler; // the pitch plot sits above the ruler
 
     const y = (hz) => h - ((hz - o.fmin) / (o.fmax - o.fmin)) * h;
     const font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
@@ -444,6 +461,36 @@
       g.lineTo(px, h);
       g.stroke();
     }
+
+    // Time ruler: a tick for each second of listening, labeled every 2 seconds.
+    if (o.ruler) {
+      g.fillStyle = cssVar(canvas, '--seg-bg', '#e9ecf0');
+      g.fillRect(0, h, w, o.ruler);
+      if (tracker.state !== 'idle') {
+        const since = tracker.startedAt();
+        g.strokeStyle = cssVar(canvas, '--grid-text', '#626a73');
+        g.fillStyle = cssVar(canvas, '--grid-text', '#626a73');
+        g.lineWidth = 1;
+        g.font = font;
+        g.textAlign = 'center';
+        g.textBaseline = 'bottom';
+        for (let n = Math.max(0, Math.ceil(start - since)); since + n <= end; n++) {
+          const px = Math.round(x(since + n)) + 0.5;
+          const labeled = n % 2 === 0;
+          g.beginPath();
+          g.moveTo(px, h);
+          g.lineTo(px, h + (labeled ? 7 : 4));
+          g.stroke();
+          if (labeled && px > 16 && px < w - 16) g.fillText(formatTime(n), px, fullH - 3);
+        }
+      }
+    }
+  }
+
+  // 75 -> "1:15"
+  function formatTime(seconds) {
+    const s = Math.floor(seconds);
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
   }
 
   // Keeps the screen on while listening, where the browser allows it. Failures are ignored.
@@ -531,7 +578,7 @@
     global.requestAnimationFrame(frame);
   }
 
-  const VoicePitch = { BANDS, WINDOW_SEC, PHRASES, bandFor, labelFor, detectPitch, median, createTracker, drawGraph, bindControls, loop };
+  const VoicePitch = { BANDS, WINDOW_SEC, PHRASES, bandFor, labelFor, detectPitch, median, createTracker, drawGraph, formatTime, bindControls, loop };
   if (typeof module !== 'undefined' && module.exports) module.exports = VoicePitch;
   else global.VoicePitch = VoicePitch;
 })(typeof window !== 'undefined' ? window : globalThis);
