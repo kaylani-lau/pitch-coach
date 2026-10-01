@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111316">
+<title>Pitch Coach</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>
+  :root {
+    --bg: #f5f6f8;
+    --surface: #ffffff;
+    --text: #15181c;
+    --muted: #626a73;
+    --border: #e2e5ea;
+    --band-female: #ffb9c5;
+    --band-andro: #d3d8dd;
+    --band-male: #a9d6e5;
+    --band-text: #15181c;
+    --grid: #0000001a;
+    --grid-text: #626a73;
+    --line: #e0263a;
+    --dot: #e0263a;
+    --playhead: #15181c;
+    --target: #1f9d61;
+    --in: #1f9d61;
+    --off: #c77a12;
+    --accent: #15181c;
+    --accent-text: #ffffff;
+    --seg-bg: #e9ecf0;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111316;
+      --surface: #1a1d21;
+      --text: #eef0f3;
+      --muted: #9aa2ab;
+      --border: #2a2e33;
+      --band-female: #5b2a37;
+      --band-andro: #2e3338;
+      --band-male: #1d4453;
+      --band-text: #eef0f3;
+      --grid: #ffffff14;
+      --grid-text: #9aa2ab;
+      --line: #ff5a6b;
+      --dot: #ff5a6b;
+      --playhead: #ffffff;
+      --target: #3ccf88;
+      --in: #3ccf88;
+      --off: #f0a640;
+      --accent: #eef0f3;
+      --accent-text: #111316;
+      --seg-bg: #23272c;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding-inline: 16px;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding-block: 16px 24px; display: flex; flex-direction: column; gap: 14px; }
+  .top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  h1 { margin: 0; font-size: 18px; }
+  .seg { display: inline-flex; background: var(--seg-bg); border-radius: 10px; padding: 3px; gap: 2px; }
+  .seg label { position: relative; }
+  .seg input { position: absolute; opacity: 0; inset: 0; cursor: pointer; }
+  .seg span { display: block; padding: 7px 12px; border-radius: 8px; font-weight: 600; font-size: 14px; color: var(--muted); }
+  .seg input:checked + span { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px #0000001f; }
+  .seg input:focus-visible + span { outline: 2px solid var(--target); }
+  .status {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+    flex-wrap: wrap;
+    padding: 14px 16px;
+    border-radius: 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 6px solid var(--border);
+  }
+  .status[data-state="in"] { border-left-color: var(--in); }
+  .status[data-state="off"] { border-left-color: var(--off); }
+  .status b { font-size: 34px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+  .status .word { font-size: 22px; font-weight: 600; }
+  .status[data-state="in"] .word { color: var(--in); }
+  .status[data-state="off"] .word { color: var(--off); }
+  .msg { margin: 0; padding: 8px 12px; border-radius: 8px; background: #e0263a26; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; }
+  #graph { width: 100%; height: min(46vh, 420px); display: block; }
+  .stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+  .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; min-width: 0; }
+  .stat .k { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .stat .v { font-size: 24px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .mix { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--seg-bg); margin-top: 10px; }
+  .mix div { height: 100%; transition: width 0.3s; }
+  .legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 12px; color: var(--muted); margin-top: 6px; }
+  .legend i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 4px; }
+  .bottom { display: flex; gap: 12px; align-items: stretch; flex-wrap: wrap; }
+  .phrase {
+    flex: 1 1 260px;
+    text-align: left;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 14px;
+    font: inherit;
+    font-size: 18px;
+    color: var(--text);
+    cursor: pointer;
+  }
+  .phrase small { display: block; font-size: 12px; color: var(--muted); }
+  .btn {
+    flex: 0 0 auto;
+    min-width: 120px;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 18px;
+    font: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    background: var(--surface);
+    color: var(--text);
+  }
+  #start { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+  @media (max-width: 520px) {
+    .stats { grid-template-columns: 1fr 1fr; }
+    .stats .stat:last-child { grid-column: 1 / -1; }
+    .btn { flex: 1 1 0; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>Pitch coach</h1>
+    <div class="seg" role="radiogroup" aria-label="Target range" id="targets"></div>
+  </div>
+  <p class="msg" id="msg" hidden></p>
+  <div class="status" id="status" data-state="">
+    <b id="hz">—</b>
+    <span class="word" id="word">Press Start</span>
+    <span class="sub" id="where"></span>
+  </div>
+  <div class="card"><canvas id="graph" aria-label="Pitch over the last 10 seconds"></canvas></div>
+  <div class="stats">
+    <div class="stat"><div class="k">In target, last 10 s</div><div class="v" id="inTarget">—</div></div>
+    <div class="stat"><div class="k">Median pitch</div><div class="v" id="median">—</div></div>
+    <div class="stat">
+      <div class="k">Time in each range</div>
+      <div class="mix" id="mix"></div>
+      <div class="legend" id="legend"></div>
+    </div>
+  </div>
+  <div class="bottom">
+    <button class="phrase" id="phrase" type="button"><span id="phraseText"></span><small>Tap for another phrase</small></button>
+    <button class="btn" id="start" type="button">Start</button>
+    <button class="btn" id="replay" type="button" disabled>Replay 10 s</button>
+  </div>
+</div>
+
+<script src="pitch.js"></script>
+<script>
+  // Install support (works only when served over https or localhost, not from a file).
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    navigator.serviceWorker.register('sw.js').catch(() => { /* app still works without it */ });
+  }
+</script>
+<script>
+  const $ = (id) => document.getElementById(id);
+  const tracker = VoicePitch.createTracker();
+  const BANDS = VoicePitch.BANDS;
+
+  VoicePitch.bindControls(tracker, $('start'), $('replay'), (message) => {
+    $('msg').textContent = message;
+    $('msg').hidden = false;
+  });
+
+  // Target picker, remembered per browser.
+  let target = 'female';
+  try {
+    const saved = localStorage.getItem('pitch-coach-target');
+    if (BANDS.some((b) => b.id === saved)) target = saved;
+  } catch (e) { /* storage unavailable */ }
+  for (const band of BANDS) {
+    const label = document.createElement('label');
+    label.innerHTML = '<input type="radio" name="target"><span></span>';
+    label.querySelector('span').textContent = band.label;
+    const input = label.querySelector('input');
+    input.value = band.id;
+    input.checked = band.id === target;
+    input.addEventListener('change', () => {
+      target = band.id;
+      try { localStorage.setItem('pitch-coach-target', target); } catch (e) { /* ignore */ }
+    });
+    $('targets').appendChild(label);
+  }
+
+  let phraseIndex = 0;
+  $('phraseText').textContent = VoicePitch.PHRASES[0];
+  $('phrase').addEventListener('click', () => {
+    phraseIndex = (phraseIndex + 1) % VoicePitch.PHRASES.length;
+    $('phraseText').textContent = VoicePitch.PHRASES[phraseIndex];
+  });
+
+  // Range mix bar and legend.
+  const MIX = BANDS.map((b) => ({ id: b.id, label: b.label, color: 'var(--band-' + b.id + ')' }))
+    .concat([{ id: 'none', label: 'Outside', color: 'var(--grid-text)' }]);
+  for (const m of MIX) {
+    const seg = document.createElement('div');
+    seg.style.background = m.color;
+    seg.style.width = '0%';
+    seg.dataset.id = m.id;
+    $('mix').appendChild(seg);
+    const item = document.createElement('span');
+    item.innerHTML = '<i></i>';
+    item.querySelector('i').style.background = m.color;
+    item.append(m.label + ' ');
+    const pct = document.createElement('b');
+    pct.dataset.id = m.id;
+    pct.textContent = '0%';
+    item.appendChild(pct);
+    $('legend').appendChild(item);
+  }
+
+  const IDLE = { idle: 'Press Start', live: 'Listening…', replay: 'Replaying…', stopped: 'Stopped' };
+
+  VoicePitch.loop(() => {
+    const state = tracker.state;
+    VoicePitch.drawGraph($('graph'), tracker, { target });
+
+    const goal = BANDS.find((b) => b.id === target);
+    const hz = tracker.current();
+    $('hz').textContent = hz ? Math.round(hz) + ' Hz' : '—';
+    if (hz) {
+      const inTarget = hz >= goal.lo && hz < goal.hi;
+      $('status').dataset.state = inTarget ? 'in' : 'off';
+      $('word').textContent = inTarget ? 'In target' : hz < goal.lo ? 'Below target' : 'Above target';
+      $('where').textContent = VoicePitch.labelFor(hz) + ' range';
+    } else {
+      $('status').dataset.state = '';
+      $('word').textContent = IDLE[state];
+      $('where').textContent = 'Target ' + goal.lo + '–' + goal.hi + ' Hz';
+    }
+
+    const stats = tracker.stats();
+    const has = stats.voicedCount > 0;
+    $('inTarget').textContent = has ? Math.round(stats.share[target] * 100) + '%' : '—';
+    $('median').textContent = stats.median ? Math.round(stats.median) + ' Hz' : '—';
+    for (const m of MIX) {
+      const pct = Math.round(stats.share[m.id] * 100);
+      $('mix').querySelector('[data-id="' + m.id + '"]').style.width = pct + '%';
+      $('legend').querySelector('b[data-id="' + m.id + '"]').textContent = pct + '%';
+    }
+
+    const running = state === 'live' || state === 'replay';
+    $('start').textContent = running ? 'Stop' : 'Start';
+    const info = tracker.replayInfo();
+    $('replay').disabled = state === 'idle' || tracker.recordedSeconds() < 0.2;
+    $('replay').textContent = info ? 'Stop (' + Math.ceil(info.remaining) + ' s)' : 'Replay 10 s';
+  });
+</script>
+</body>
+</html>
