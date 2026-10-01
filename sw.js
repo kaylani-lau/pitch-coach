@@ -1,6 +1,6 @@
 // Offline support for Pitch Coach: use the network when online (so updates arrive),
 // fall back to the cached copy when offline.
-const CACHE = 'pitch-coach-v1';
+const CACHE = 'pitch-coach-v2';
 const FILES = ['./coach.html', './pitch.js', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (event) => {
@@ -18,7 +18,9 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   event.respondWith(
-    fetch(event.request)
+    // 'no-cache' asks the server whether the file changed (cheap when it hasn't), instead of
+    // reusing the browser's 10-minute copy, so updates show up on the next open.
+    fetch(event.request, { cache: 'no-cache' })
       .then((response) => {
         const copy = response.clone();
         caches.open(CACHE).then((cache) => cache.put(event.request, copy));
