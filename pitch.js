@@ -109,7 +109,8 @@
     return sorted[Math.floor(sorted.length / 2)];
   }
 
-  // States: idle (never started), live, replay, stopped.
+  // States: idle (never started), waiting (mic open, but the browser holds audio paused
+  // until the page is tapped), live, replay, stopped.
   function createTracker() {
     let ctx = null;
     let stream = null;
@@ -124,6 +125,7 @@
     let replayStart = 0;
     let replayDur = 0;
     let frozenNow = 0;
+    let starting = null;
     const history = []; // { t, hz } in AudioContext seconds
     const recent = []; // last few raw readings, for median smoothing
 
@@ -179,13 +181,42 @@
       stream = null;
     }
 
+    async function openMic() {
+      if (capturing) return;
+      if (replayNode) api.stopReplay();
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      });
+      if (!ctx) ctx = new (global.AudioContext || global.webkitAudioContext)();
+      // Not awaited: until the page has been tapped, the browser can leave this pending,
+      // and the tracker reports 'waiting' meanwhile.
+      ctx.resume();
+      sampleRate = ctx.sampleRate;
+      ring = new Float32Array(Math.round(sampleRate * WINDOW_SEC));
+      ringPos = 0;
+      filled = 0;
+      history.length = 0;
+      recent.length = 0;
+
+      source = ctx.createMediaStreamSource(stream);
+      proc = ctx.createScriptProcessor(BLOCK, 1, 1);
+      const mute = ctx.createGain();
+      mute.gain.value = 0;
+      proc.onaudioprocess = onAudio;
+      source.connect(proc);
+      proc.connect(mute);
+      mute.connect(ctx.destination);
+      capturing = true;
+    }
+
     const api = {
       history,
 
       get state() {
         if (!ctx) return 'idle';
         if (replayNode) return 'replay';
-        return capturing ? 'live' : 'stopped';
+        if (!capturing) return 'stopped';
+        return ctx.state === 'running' ? 'live' : 'waiting';
       },
 
       // The time at the right edge of the view.
@@ -241,30 +272,15 @@
         };
       },
 
-      async start() {
-        if (capturing) return;
-        if (replayNode) api.stopReplay();
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-        });
-        if (!ctx) ctx = new (global.AudioContext || global.webkitAudioContext)();
-        await ctx.resume();
-        sampleRate = ctx.sampleRate;
-        ring = new Float32Array(Math.round(sampleRate * WINDOW_SEC));
-        ringPos = 0;
-        filled = 0;
-        history.length = 0;
-        recent.length = 0;
+      // Calls made while the mic is still opening share one attempt.
+      start() {
+        if (!starting) starting = openMic().finally(() => { starting = null; });
+        return starting;
+      },
 
-        source = ctx.createMediaStreamSource(stream);
-        proc = ctx.createScriptProcessor(BLOCK, 1, 1);
-        const mute = ctx.createGain();
-        mute.gain.value = 0;
-        proc.onaudioprocess = onAudio;
-        source.connect(proc);
-        proc.connect(mute);
-        mute.connect(ctx.destination);
-        capturing = true;
+      // Unpauses audio. Browsers allow this only after the page has been tapped.
+      resume() {
+        if (ctx) ctx.resume();
       },
 
       stop() {
@@ -444,17 +460,20 @@
     } catch (e) { /* not supported or refused */ }
   }
 
-  // Wires a Start/Stop button and a Replay button to a tracker.
-  // Space toggles replay. onError(message) reports mic problems.
+  // Wires a Start/Stop button and a Replay button to a tracker, and starts listening as
+  // soon as the page opens. Space toggles replay. onError(message) reports mic problems.
   function bindControls(tracker, startBtn, replayBtn, onError) {
-    startBtn.addEventListener('click', async () => {
-      if (tracker.state === 'live' || tracker.state === 'replay') {
-        tracker.stop();
-        keepScreenOn(false);
-        return;
-      }
+    let resumeOnReturn = false;
+
+    async function listen() {
       try {
         await tracker.start();
+        // The app was left while the mic was opening; listen again on return instead.
+        if (document.visibilityState === 'hidden') {
+          tracker.stop();
+          resumeOnReturn = true;
+          return;
+        }
         keepScreenOn(true);
       } catch (err) {
         const denied = err && (err.name === 'NotAllowedError' || err.name === 'SecurityError');
@@ -462,6 +481,14 @@
           onError(denied ? 'Microphone access was blocked. Allow it in the browser and try again.' : 'Could not start the microphone: ' + (err && err.message));
         }
       }
+    }
+
+    startBtn.addEventListener('click', () => {
+      if (tracker.state === 'waiting') tracker.resume();
+      else if (tracker.state === 'live' || tracker.state === 'replay') {
+        tracker.stop();
+        keepScreenOn(false);
+      } else listen();
     });
     const toggleReplay = () => {
       if (tracker.state === 'replay') tracker.stopReplay();
@@ -469,11 +496,19 @@
     };
     replayBtn.addEventListener('click', toggleReplay);
     // Stop listening as soon as the app is hidden (app switch, home screen, screen lock),
-    // so nothing runs in the background. The last 10 seconds stay available to replay.
+    // so nothing runs in the background, and listen again on return. Listening again
+    // starts a fresh 10 seconds. If Stop was pressed before leaving, it stays stopped.
     document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'hidden' && (tracker.state === 'live' || tracker.state === 'replay')) {
-        tracker.stop();
-        keepScreenOn(false);
+      const state = tracker.state;
+      if (document.visibilityState === 'hidden') {
+        if (state === 'live' || state === 'replay' || state === 'waiting') {
+          tracker.stop();
+          keepScreenOn(false);
+          resumeOnReturn = true;
+        }
+      } else if (resumeOnReturn) {
+        resumeOnReturn = false;
+        listen();
       }
     });
     document.addEventListener('keydown', (e) => {
@@ -482,6 +517,9 @@
         toggleReplay();
       }
     });
+
+    if (document.visibilityState === 'visible') listen();
+    else resumeOnReturn = true;
   }
 
   // Calls render every animation frame.

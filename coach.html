@@ -115,7 +115,7 @@
 <div class="wrap">
   <div class="top">
     <h1>Pitch coach</h1>
-    <small class="version">v3 · Oct 1</small>
+    <small class="version">v4 · Oct 1</small>
   </div>
   <div class="controls">
     <button class="btn" id="start" type="button">Start</button>
@@ -203,7 +203,7 @@
     }
 
     const running = state === 'live' || state === 'replay';
-    $('start').textContent = running ? 'Stop' : 'Start';
+    $('start').textContent = state === 'waiting' ? 'Tap to start' : running ? 'Stop' : 'Start';
     const info = tracker.replayInfo();
     $('replay').disabled = state === 'idle' || tracker.recordedSeconds() < 0.2;
     $('replay').textContent = info ? 'Stop (' + Math.ceil(info.remaining) + ' s)' : 'Replay 10 s';
