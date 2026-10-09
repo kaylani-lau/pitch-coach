@@ -119,7 +119,7 @@
 <div class="wrap">
   <div class="top">
     <h1>Pitch coach</h1>
-    <small class="version">v7 · Oct 9</small>
+    <small class="version">v8 · Oct 9</small>
   </div>
   <div class="modes" role="group" aria-label="Mode">
     <button type="button" id="modeLive" aria-pressed="true">Live</button>
@@ -160,10 +160,20 @@
   const tracker = VoicePitch.createTracker();
   const BANDS = VoicePitch.BANDS;
 
+  // In mirror mode the big button skips ahead: while recording it plays the take back
+  // now, and during playback it starts the next recording.
+  function mirrorTap(state) {
+    if (mode !== 'mirror') return false;
+    if (state === 'live') mirror.finishTake();
+    else if (state === 'replay') mirror.skipPlayback();
+    else return false;
+    return true;
+  }
+
   VoicePitch.bindControls(tracker, $('start'), $('replay'), (message) => {
     $('msg').textContent = message;
     $('msg').hidden = false;
-  });
+  }, mirrorTap);
 
   // Mirror mode: record 10 seconds, play them back, repeat.
   const mirror = VoicePitch.createMirror(tracker, 10);
@@ -257,12 +267,12 @@
     if (state === 'live') {
       const listened = tracker.listenedSeconds();
       const heardNothing = performance.now() - mirror.skippedAt < 2500;
-      const hint = heardNothing ? "Didn't hear you, recording again" : 'Take ' + mirror.take + ' · tap to stop';
+      const hint = heardNothing ? "Didn't hear you, recording again" : 'Take ' + mirror.take + ' · tap to play back';
       return ['Recording · ' + Math.max(1, Math.ceil(mirror.seconds - listened)) + ' s', hint, listened / mirror.seconds];
     }
     if (state === 'replay') {
       const info = tracker.replayInfo();
-      return ['Playing back · ' + Math.max(1, Math.ceil(info.remaining)) + ' s', 'Take ' + mirror.take + ' · not listening', info.elapsed / info.duration];
+      return ['Playing back · ' + Math.max(1, Math.ceil(info.remaining)) + ' s', 'Take ' + mirror.take + ' · tap to record', info.elapsed / info.duration];
     }
     if (state === 'stopped') return ['Mirror paused', 'Tap to start', 0];
     return startText(state).concat([0]);

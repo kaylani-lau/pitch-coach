@@ -565,7 +565,13 @@
       skippedAt: -Infinity, // performance.now() when a silent take was skipped
 
       tick() {
-        if (tracker.state !== 'live' || tracker.listenedSeconds() < seconds) return;
+        if (tracker.state === 'live' && tracker.listenedSeconds() >= seconds) mirror.finishTake();
+      },
+
+      // Ends the take being recorded and plays it back. If it heard nothing, it starts
+      // the take over instead of playing back silence.
+      finishTake() {
+        if (tracker.state !== 'live') return;
         const start = tracker.startedAt();
         const take = tracker.history
           .filter((p) => p.t >= start)
@@ -586,6 +592,11 @@
           mirror.take++;
         });
         if (!started) mirror.playing = null;
+      },
+
+      // Stops a playback early and starts recording the next take.
+      skipPlayback() {
+        if (tracker.state === 'replay') tracker.stopReplay();
       },
 
       // The take on screen now: the one playing back, or the one being recorded.
@@ -622,7 +633,8 @@
 
   // Wires a Start/Stop button and a Replay button to a tracker, and starts listening as
   // soon as the page opens. Space toggles replay. onError(message) reports mic problems.
-  function bindControls(tracker, startBtn, replayBtn, onError) {
+  // onStartTap(state), if given, can handle a Start tap itself by returning true.
+  function bindControls(tracker, startBtn, replayBtn, onError, onStartTap) {
     let resumeOnReturn = false;
 
     async function listen() {
@@ -644,6 +656,7 @@
     }
 
     startBtn.addEventListener('click', () => {
+      if (onStartTap && onStartTap(tracker.state)) return;
       if (tracker.state === 'waiting') tracker.resume();
       else if (tracker.state === 'live' || tracker.state === 'replay') {
         tracker.stop();
