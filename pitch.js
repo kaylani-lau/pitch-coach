@@ -135,11 +135,16 @@
     function endReplay(node) {
       if (replayNode !== node) return;
       replayNode = null;
+      // The mic was ignored during the replay, so listening counts again from zero.
+      clearRecording();
+    }
+
+    // Discards the recorded audio and pitch history; listening time starts over.
+    function clearRecording() {
       ringPos = 0;
       filled = 0;
       history.length = 0;
       recent.length = 0;
-      // The mic was ignored during the replay, so listening counts again from zero.
       if (capturing) listenStart = ctx.currentTime;
     }
 
@@ -337,6 +342,10 @@
         return true;
       },
 
+      clearRecording() {
+        if (ctx) clearRecording();
+      },
+
       stopReplay() {
         const node = replayNode;
         if (!node) return;
@@ -365,9 +374,12 @@
 
   // Draws the scrolling pitch graph with range bands.
   // opts: { fmin, fmax, grid, labels, target (band id to highlight), dots,
-  //         ruler (height in px of a time ruler along the bottom, 0 for none) }
+  //         ruler (height in px of a time ruler along the bottom, 0 for none),
+  //         span (seconds across the graph), start (hold the graph still from this time
+  //         instead of scrolling), ghost ([{ t, hz }] drawn faintly, t in seconds from start),
+  //         cursor (with start: a thin line at the current time while listening) }
   function drawGraph(canvas, tracker, opts) {
-    const o = Object.assign({ fmin: 50, fmax: 450, grid: true, labels: true, target: null, dots: true, ruler: 0 }, opts);
+    const o = Object.assign({ fmin: 50, fmax: 450, grid: true, labels: true, target: null, dots: true, ruler: 0, span: WINDOW_SEC, start: null, ghost: null, cursor: false }, opts);
     const dpr = global.devicePixelRatio || 1;
     const w = canvas.clientWidth;
     let h = canvas.clientHeight;
@@ -431,9 +443,33 @@
 
     // Pitch line, broken at silences.
     const end = tracker.now();
-    const start = end - WINDOW_SEC;
-    const x = (t) => ((t - start) / WINDOW_SEC) * w;
-    const points = tracker.pointsInView();
+    const fixed = o.start != null;
+    const start = fixed ? o.start : end - o.span;
+    const last = fixed ? start + o.span : end; // time at the right edge
+    const x = (t) => ((t - start) / o.span) * w;
+    const points = tracker.history.filter((p) => p.t >= start && p.t <= Math.min(end, last));
+
+    // Faint line for the previous take, behind the current one.
+    if (o.ghost) {
+      g.globalAlpha = 0.45;
+      g.strokeStyle = cssVar(canvas, '--band-text', '#888');
+      g.lineWidth = 1.5;
+      g.lineJoin = 'round';
+      g.beginPath();
+      let on = false;
+      for (const p of o.ghost) {
+        if (p.hz == null) {
+          on = false;
+          continue;
+        }
+        if (on) g.lineTo(x(start + p.t), y(p.hz));
+        else g.moveTo(x(start + p.t), y(p.hz));
+        on = true;
+      }
+      g.stroke();
+      g.globalAlpha = 1;
+    }
+
     g.strokeStyle = cssVar(canvas, '--line', '#e0263a');
     g.lineWidth = 2;
     g.lineJoin = 'round';
@@ -461,6 +497,17 @@
       }
     }
 
+    // Thin line at the current time while a held-still graph fills in.
+    if (fixed && o.cursor && tracker.state === 'live') {
+      const px = Math.round(x(end)) + 0.5;
+      g.strokeStyle = cssVar(canvas, '--grid-text', '#626a73');
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(px, 0);
+      g.lineTo(px, h);
+      g.stroke();
+    }
+
     // Replay playhead.
     const info = tracker.replayInfo();
     if (info) {
@@ -473,7 +520,8 @@
       g.stroke();
     }
 
-    // Time ruler: a tick for each second of listening, labeled every 2 seconds.
+    // Time ruler: a tick for each second of listening, labeled every 2 seconds
+    // (every second on a short graph).
     if (o.ruler) {
       g.fillStyle = cssVar(canvas, '--seg-bg', '#e9ecf0');
       g.fillRect(0, h, w, o.ruler);
@@ -485,9 +533,9 @@
         g.font = font;
         g.textAlign = 'center';
         g.textBaseline = 'bottom';
-        for (let n = Math.max(0, Math.ceil(start - since)); since + n <= end; n++) {
+        for (let n = Math.max(0, Math.ceil(start - since)); since + n <= last; n++) {
           const px = Math.round(x(since + n)) + 0.5;
-          const labeled = n % 2 === 0;
+          const labeled = o.span <= 6 || n % 2 === 0;
           g.beginPath();
           g.moveTo(px, h);
           g.lineTo(px, h + (labeled ? 7 : 4));
@@ -502,6 +550,60 @@
   function formatTime(seconds) {
     const s = Math.floor(seconds);
     return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+  }
+
+  // Mirror mode: record a take, play it back, repeat. Call tick() every frame; it ends
+  // each take once it is long enough. Playback reuses replay(), which ignores the mic
+  // while it plays and starts the next take from zero when it ends.
+  function createMirror(tracker, seconds) {
+    let round = 0; // ignores a playback that ends after reset()
+    const mirror = {
+      seconds,
+      take: 1,
+      playing: null, // the take being played back: [{ t, hz }], t in seconds from its start
+      lastTake: null, // the take before, drawn faintly behind the current one
+      skippedAt: -Infinity, // performance.now() when a silent take was skipped
+
+      tick() {
+        if (tracker.state !== 'live' || tracker.listenedSeconds() < seconds) return;
+        const start = tracker.startedAt();
+        const take = tracker.history
+          .filter((p) => p.t >= start)
+          .map((p) => ({ t: p.t - start, hz: p.hz }));
+        // Heard nothing: record again instead of playing back silence.
+        if (!take.some((p) => p.hz != null)) {
+          mirror.skippedAt = global.performance.now();
+          mirror.take++;
+          tracker.clearRecording();
+          return;
+        }
+        mirror.playing = take;
+        const thisRound = round;
+        const started = tracker.replay(() => {
+          if (thisRound !== round) return;
+          mirror.lastTake = mirror.playing;
+          mirror.playing = null;
+          mirror.take++;
+        });
+        if (!started) mirror.playing = null;
+      },
+
+      // The take on screen now: the one playing back, or the one being recorded.
+      currentTake() {
+        if (mirror.playing) return mirror.playing;
+        const start = tracker.startedAt();
+        return tracker.history.filter((p) => p.t >= start).map((p) => ({ t: p.t - start, hz: p.hz }));
+      },
+
+      reset() {
+        round++;
+        mirror.take = 1;
+        mirror.playing = null;
+        mirror.lastTake = null;
+        mirror.skippedAt = -Infinity;
+      },
+    };
+    return mirror;
   }
 
   // Keeps the screen on while listening, where the browser allows it. Failures are ignored.
@@ -549,6 +651,7 @@
       } else listen();
     });
     const toggleReplay = () => {
+      if (replayBtn.hidden) return; // no Replay button in mirror mode
       if (tracker.state === 'replay') tracker.stopReplay();
       else tracker.replay();
     };
@@ -594,7 +697,7 @@
     }, 1000 / fps);
   }
 
-  const VoicePitch = { BANDS, WINDOW_SEC, PHRASES, bandFor, labelFor, detectPitch, median, createTracker, drawGraph, formatTime, bindControls, loop };
+  const VoicePitch = { BANDS, WINDOW_SEC, PHRASES, bandFor, labelFor, detectPitch, median, createTracker, createMirror, drawGraph, formatTime, bindControls, loop };
   if (typeof module !== 'undefined' && module.exports) module.exports = VoicePitch;
   else global.VoicePitch = VoicePitch;
 })(typeof window !== 'undefined' ? window : globalThis);

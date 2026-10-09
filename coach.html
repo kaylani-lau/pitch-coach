@@ -36,6 +36,7 @@
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
   html, body { margin: 0; }
   body {
     background: var(--bg);
@@ -98,6 +99,15 @@
   @keyframes beat { 0%, 100% { opacity: 1; transform: scale(1); } 60% { opacity: 0.35; transform: scale(0.8); } }
   @media (prefers-reduced-motion: reduce) { #start.live .dot { animation: none; } }
   #replay { padding-block: 10px; }
+  #start { position: relative; overflow: hidden; }
+  #start .progress { position: absolute; left: 0; bottom: 0; height: 3px; width: 0; background: var(--line); }
+  #start.replay .progress { background: var(--muted); }
+  .modes { display: flex; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .modes button { flex: 1 1 0; font: inherit; font-size: 14px; font-weight: 600; padding: 9px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+  .modes button[aria-pressed="true"] { background: var(--border); color: var(--text); }
+  .modes button:focus-visible { outline: 2px solid var(--line); outline-offset: -2px; }
+  #mirrorStats { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .stat .sub { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .btn:disabled { opacity: 0.45; cursor: not-allowed; }
   @media (max-width: 520px) {
     .stats { grid-template-columns: minmax(0, 1fr); }
@@ -109,21 +119,29 @@
 <div class="wrap">
   <div class="top">
     <h1>Pitch coach</h1>
-    <small class="version">v6 · Oct 1</small>
+    <small class="version">v7 · Oct 9</small>
+  </div>
+  <div class="modes" role="group" aria-label="Mode">
+    <button type="button" id="modeLive" aria-pressed="true">Live</button>
+    <button type="button" id="modeMirror" aria-pressed="false">Mirror</button>
   </div>
   <div class="controls">
-    <button class="btn" id="start" type="button"><span class="row"><span class="dot"></span><span id="startLabel">Start</span></span><small id="startHint">Tap to listen</small></button>
+    <button class="btn" id="start" type="button"><span class="row"><span class="dot"></span><span id="startLabel">Start</span></span><small id="startHint">Tap to listen</small><span class="progress" id="startBar"></span></button>
     <button class="btn" id="replay" type="button" disabled>Replay 10 s</button>
   </div>
   <p class="msg" id="msg" hidden></p>
   <div class="card"><canvas id="graph" aria-label="Pitch over the last 10 seconds"></canvas></div>
-  <div class="stats">
+  <div class="stats" id="liveStats">
     <div class="stat"><div class="k">Median pitch</div><div class="v" id="median">—</div></div>
     <div class="stat">
       <div class="k">Time in each range</div>
       <div class="mix" id="mix"></div>
       <div class="legend" id="legend"></div>
     </div>
+  </div>
+  <div class="stats" id="mirrorStats" hidden>
+    <div class="stat"><div class="k" id="takeK">This take</div><div class="v" id="takeV">—</div><div class="sub" id="takeS"></div></div>
+    <div class="stat"><div class="k">Last take</div><div class="v" id="lastV">—</div><div class="sub" id="lastS"></div></div>
   </div>
   <div class="bottom">
     <button class="phrase" id="phrase" type="button"><span id="phraseText"></span><small>Tap for another phrase</small></button>
@@ -146,6 +164,27 @@
     $('msg').textContent = message;
     $('msg').hidden = false;
   });
+
+  // Mirror mode: record 5 seconds, play them back, repeat.
+  const mirror = VoicePitch.createMirror(tracker, 5);
+  let mode = 'live';
+  function setMode(next) {
+    if (next === mode) return;
+    mode = next;
+    // Either way, start from a fresh recording.
+    if (tracker.state === 'replay') tracker.stopReplay();
+    else tracker.clearRecording();
+    mirror.reset();
+    $('modeLive').setAttribute('aria-pressed', String(mode === 'live'));
+    $('modeMirror').setAttribute('aria-pressed', String(mode === 'mirror'));
+    $('replay').hidden = mode === 'mirror';
+    $('liveStats').hidden = mode === 'mirror';
+    $('mirrorStats').hidden = mode === 'live';
+    try { localStorage.setItem('pitchCoachMode', mode); } catch (e) { /* not remembered */ }
+  }
+  $('modeLive').addEventListener('click', () => setMode('live'));
+  $('modeMirror').addEventListener('click', () => setMode('mirror'));
+  try { if (localStorage.getItem('pitchCoachMode') === 'mirror') setMode('mirror'); } catch (e) { /* stay in Live */ }
 
   let phraseIndex = 0;
   $('phraseText').textContent = VoicePitch.PHRASES[0];
@@ -175,7 +214,25 @@
   }
 
   let lastStatsAt = 0;
+  // Median and share in the female range for one take: [value, detail].
+  function takeSummary(take) {
+    const voiced = (take || []).filter((p) => p.hz != null).map((p) => p.hz);
+    if (!voiced.length) return ['—', ''];
+    const female = voiced.filter((hz) => { const band = VoicePitch.bandFor(hz); return band && band.id === 'female'; }).length;
+    return [Math.round(VoicePitch.median(voiced)) + ' Hz', Math.round((female / voiced.length) * 100) + '% in female range'];
+  }
+
   function updateStats() {
+    if (mode === 'mirror') {
+      const [value, detail] = takeSummary(mirror.currentTake());
+      const [lastValue, lastDetail] = takeSummary(mirror.lastTake);
+      $('takeK').textContent = 'This take (' + mirror.take + ')';
+      $('takeV').textContent = value;
+      $('takeS').textContent = detail;
+      $('lastV').textContent = lastValue;
+      $('lastS').textContent = lastDetail;
+      return;
+    }
     const stats = tracker.stats();
     $('median').textContent = stats.median ? Math.round(stats.median) + ' Hz' : '—';
     for (const m of MIX) {
@@ -195,9 +252,30 @@
     return ['Start', 'Tap to listen'];
   }
 
+  // The same button in mirror mode, plus how full its progress bar is (0 to 1).
+  function mirrorText(state) {
+    if (state === 'live') {
+      const listened = tracker.listenedSeconds();
+      const heardNothing = performance.now() - mirror.skippedAt < 2500;
+      const hint = heardNothing ? "Didn't hear you, recording again" : 'Take ' + mirror.take + ' · tap to stop';
+      return ['Recording · ' + Math.max(1, Math.ceil(mirror.seconds - listened)) + ' s', hint, listened / mirror.seconds];
+    }
+    if (state === 'replay') {
+      const info = tracker.replayInfo();
+      return ['Playing back · ' + Math.max(1, Math.ceil(info.remaining)) + ' s', 'Take ' + mirror.take + ' · not listening', info.elapsed / info.duration];
+    }
+    if (state === 'stopped') return ['Mirror paused', 'Tap to start', 0];
+    return startText(state).concat([0]);
+  }
+
   VoicePitch.loop(() => {
+    if (mode === 'mirror') mirror.tick();
     const state = tracker.state;
-    VoicePitch.drawGraph($('graph'), tracker, { ruler: 22 });
+    if (mode === 'mirror') {
+      VoicePitch.drawGraph($('graph'), tracker, { ruler: 22, span: mirror.seconds, start: tracker.startedAt(), ghost: mirror.lastTake, cursor: true });
+    } else {
+      VoicePitch.drawGraph($('graph'), tracker, { ruler: 22 });
+    }
 
     // Numbers update 4 times a second instead of every frame, so they read steadily.
     const now = performance.now();
@@ -206,7 +284,8 @@
       updateStats();
     }
 
-    const [label, hint] = startText(state);
+    const [label, hint, filled] = mode === 'mirror' ? mirrorText(state) : startText(state).concat([0]);
+    $('startBar').style.width = Math.min(100, filled * 100) + '%';
     if ($('start').className !== 'btn ' + state) $('start').className = 'btn ' + state;
     if ($('startLabel').textContent !== label) $('startLabel').textContent = label;
     if ($('startHint').textContent !== hint) $('startHint').textContent = hint;
