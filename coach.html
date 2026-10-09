@@ -165,8 +165,8 @@
     $('msg').hidden = false;
   });
 
-  // Mirror mode: record 5 seconds, play them back, repeat.
-  const mirror = VoicePitch.createMirror(tracker, 5);
+  // Mirror mode: record 10 seconds, play them back, repeat.
+  const mirror = VoicePitch.createMirror(tracker, 10);
   let mode = 'live';
   function setMode(next) {
     if (next === mode) return;
