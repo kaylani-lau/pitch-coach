@@ -657,13 +657,8 @@
 
     startBtn.addEventListener('click', () => {
       if (onStartTap && onStartTap(tracker.state)) return;
-      if (tracker.state === 'waiting') {
-        // Resuming alone didn't start audio on an Android phone, but leaving the app and
-        // coming back did, which closes and reopens the mic. So a tap does the same.
-        tracker.resume();
-        tracker.stop();
-        listen();
-      } else if (tracker.state === 'live' || tracker.state === 'replay') {
+      if (tracker.state === 'waiting') tracker.resume();
+      else if (tracker.state === 'live' || tracker.state === 'replay') {
         tracker.stop();
         keepScreenOn(false);
       } else listen();
